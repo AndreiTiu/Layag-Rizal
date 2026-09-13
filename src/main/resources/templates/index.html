@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layag Rizal</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f7fa;
+            color: #222;
+        }
+
+        nav {
+            background: #1e3a8a;
+            color: white;
+            padding: 18px 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 25px;
+        }
+
+        .hero {
+            min-height: 500px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #dbeafe, #eff6ff);
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            color: #1e3a8a;
+            margin-bottom: 20px;
+        }
+
+        .hero p {
+            font-size: 20px;
+            color: #555;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #1e3a8a;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #172554;
+        }
+
+        .services {
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .services h2 {
+            font-size: 32px;
+            margin-bottom: 35px;
+            color: #1e3a8a;
+        }
+
+        .cards {
+            display: flex;
+            justify-content: center;
+            gap: 25px;
+            flex-wrap: wrap;
+        }
+
+        .card {
+            background: white;
+            width: 280px;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+
+        .card h3 {
+            margin-bottom: 15px;
+            color: #1e3a8a;
+        }
+
+        .card p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* DELIVERY FORM */
+
+        .form-section {
+            display: none;
+            padding: 60px 20px;
+            background: #eef4ff;
+        }
+
+        .form-container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 35px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .form-container h2 {
+            color: #1e3a8a;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 7px;
+            font-size: 15px;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 90px;
+        }
+
+        .submit-btn {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .success-message {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background: #dcfce7;
+            color: #166534;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        footer {
+            background: #1e3a8a;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo">🚚 Layag Rizal</div>
+
+        <div>
+    <a href="/">Home</a>
+    <a href="#" onclick="showDeliveryForm(); return false;">Book a Delivery</a>
+    <a href="#">Login</a>
+    <a href="#">Register</a>
+</div>
+    </nav>
+
+    <section class="hero">
+        <div>
+            <h1>Fast & Reliable Delivery</h1>
+
+            <p>
+                Web-Based Courier and Logistics Tracking System
+                for Rizal Province
+            </p>
+
+            <button class="btn" onclick="showDeliveryForm()">
+                Book a Delivery
+            </button>
+        </div>
+    </section>
+
+    <section class="services">
+        <h2>Our Services</h2>
+
+        <div class="cards">
+
+            <div class="card">
+                <h3>📦 Parcel Delivery</h3>
+                <p>
+                    Send packages safely and conveniently
+                    within Rizal Province.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>📍 Delivery Tracking</h3>
+                <p>
+                    Track your delivery status from pickup
+                    until it reaches the recipient.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>🏍️ Rider Service</h3>
+                <p>
+                    Connect customers with available
+                    delivery riders.
+                </p>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- BOOK A DELIVERY FORM -->
+
+    <section class="form-section" id="deliveryForm">
+
+        <div class="form-container">
+
+            <h2>📦 Book a Delivery</h2>
+
+            <form id="deliveryBookingForm">
+
+                <div class="form-group">
+                    <label for="senderName">Sender Name</label>
+                    <input
+                        type="text"
+                        id="senderName"
+                        placeholder="Enter sender name"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="receiverName">Receiver Name</label>
+                    <input
+                        type="text"
+                        id="receiverName"
+                        placeholder="Enter receiver name"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="pickupAddress">Pickup Address</label>
+                    <textarea
+                        id="pickupAddress"
+                        placeholder="Enter pickup address"
+                        required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="deliveryAddress">Delivery Address</label>
+                    <textarea
+                        id="deliveryAddress"
+                        placeholder="Enter delivery address"
+                        required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="packageType">Package Type</label>
+
+                    <select id="packageType" required>
+                        <option value="">Select package type</option>
+                        <option value="Document">Document</option>
+                        <option value="Small Parcel">Small Parcel</option>
+                        <option value="Medium Parcel">Medium Parcel</option>
+                        <option value="Large Parcel">Large Parcel</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="packageDescription">
+                        Package Description
+                    </label>
+
+                    <textarea
+                        id="packageDescription"
+                        placeholder="Describe the package"
+                        required></textarea>
+                </div>
+
+                <button type="submit" class="btn submit-btn">
+                    Submit Delivery Booking
+                </button>
+
+            </form>
+
+            <div class="success-message" id="successMessage">
+                ✅ Delivery booking submitted successfully!
+            </div>
+
+        </div>
+
+    </section>
+
+    <footer>
+        <p>© 2026 Layag Rizal. All Rights Reserved.</p>
+    </footer>
+
+
+    <script>
+
+        function showDeliveryForm() {
+
+            const form = document.getElementById("deliveryForm");
+
+            form.style.display = "block";
+
+            form.scrollIntoView({
+                behavior: "smooth"
+            });
+        }
+
+
+        document.getElementById("deliveryBookingForm")
+            .addEventListener("submit", function(event) {
+
+                event.preventDefault();
+
+                const senderName =
+                    document.getElementById("senderName").value;
+
+                const receiverName =
+                    document.getElementById("receiverName").value;
+
+                const pickupAddress =
+                    document.getElementById("pickupAddress").value;
+
+                const deliveryAddress =
+                    document.getElementById("deliveryAddress").value;
+
+                const packageType =
+                    document.getElementById("packageType").value;
+
+                const packageDescription =
+                    document.getElementById("packageDescription").value;
+
+
+                console.log("DELIVERY BOOKING");
+
+                console.log("Sender:", senderName);
+                console.log("Receiver:", receiverName);
+                console.log("Pickup:", pickupAddress);
+                console.log("Delivery:", deliveryAddress);
+                console.log("Package:", packageType);
+                console.log("Description:", packageDescription);
+
+
+                document.getElementById("successMessage")
+                    .style.display = "block";
+
+
+                document.getElementById("deliveryBookingForm")
+                    .reset();
+
+            });
+
+    </script>
+
+</body>
+</html>
