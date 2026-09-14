@@ -1,0 +1,12 @@
+# Local secrets — never commit these
+config.properties
+
+# Build / runtime artifacts
+out/
+*.class
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
