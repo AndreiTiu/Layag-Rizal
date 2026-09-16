@@ -38,6 +38,15 @@ public class ParcelService {
     // createdByUserId links the parcel to the logged-in account that booked it,
     // which is what payment/owner checks are based on.
     public Parcel registerParcel(String sender, String receiver, double weight, String serviceType, String vehicleType, boolean interIsland, int createdByUserId) {
+        return registerParcel(sender, receiver, weight, serviceType, vehicleType, interIsland, createdByUserId, null, null, 0);
+    }
+
+    // Full path. The stored fee uses the itemized breakdown (incl. distance fee
+    // and inter-island surcharge) so Parcel.fee ALWAYS equals what the receipt
+    // shows. createdByUserId links the parcel to the logged-in account that
+    // booked it, which is what payment/owner checks are based on.
+    public Parcel registerParcel(String sender, String receiver, double weight, String serviceType, String vehicleType, boolean interIsland, int createdByUserId,
+                                 String pickUpAddress, String dropOffAddress, double distanceKm) {
         // Input bounds: reject nonsense here, before it reaches the fee engine
         // or the database. The API layer checks format; this is the business
         // layer checking rules (defense in depth).
@@ -55,11 +64,50 @@ public class ParcelService {
         if (weight <= 0 || weight > MAX_WEIGHT_KG) {
             throw new IllegalArgumentException("Weight must be between 0 and " + MAX_WEIGHT_KG + " kg.");
         }
+        if (distanceKm < 0) {
+            throw new IllegalArgumentException("Distance cannot be negative.");
+        }
         if (serviceType == null || serviceType.isBlank()) {
             throw new IllegalArgumentException("Service type is required.");
         }
-        double fee = feeService.computeBreakdown(weight, serviceType, vehicleType, interIsland).getTotalFee();
-        return repository.registerParcel(send, recv, weight, fee, vehicleType, generateTrackingCode(), serviceType, createdByUserId);
+        double fee = feeService.computeBreakdown(weight, serviceType, vehicleType, interIsland, distanceKm).getTotalFee();
+        return repository.registerParcel(send, recv, weight, fee, vehicleType, generateTrackingCode(), serviceType, createdByUserId, pickUpAddress, dropOffAddress, distanceKm, interIsland);
+    }
+
+    // Sender's own deliveries ("My bookings" screen).
+    public ArrayList<Parcel> parcelsByOwner(int userId) {
+        return repository.findByCreatedBy(userId);
+    }
+
+    // Owner confirms the parcel details/weight before assignment.
+    public void confirmParcel(int parcelId) {
+        repository.confirm(parcelId);
+    }
+
+    // Edit before assignment: caller supplies only the fields that changed.
+    // Fee is recomputed from whatever ends up as the final values (weight,
+    // service, vehicle, distance), and the result is returned.
+    public Parcel editParcel(int parcelId, String sender, String receiver, String pickUpAddress, String dropOffAddress,
+                             Double newWeight, String serviceType, String vehicleType, Boolean interIsland, Double distanceKm) {
+        Parcel p = repository.findById(parcelId);
+        if (p == null) {
+            throw new IllegalArgumentException("Parcel not found.");
+        }
+        String finalSender = sender == null || sender.isBlank() ? p.getSenderName() : sender.trim();
+        String finalReceiver = receiver == null || receiver.isBlank() ? p.getReceiverName() : receiver.trim();
+        String finalPickUp = pickUpAddress == null || pickUpAddress.isBlank() ? p.getPickUpAddress() : pickUpAddress.trim();
+        String finalDropOff = dropOffAddress == null || dropOffAddress.isBlank() ? p.getDropOffAddress() : dropOffAddress.trim();
+        double finalWeight = newWeight == null ? p.getWeightKg() : newWeight;
+        String finalService = serviceType == null || serviceType.isBlank() ? p.getServiceType() : serviceType;
+        String finalVehicle = vehicleType == null || vehicleType.isBlank() ? p.getVehicleType() : vehicleType;
+        double finalDistance = distanceKm == null ? p.getDistanceKm() : distanceKm;
+        if (finalWeight <= 0 || finalWeight > MAX_WEIGHT_KG) {
+            throw new IllegalArgumentException("Weight must be between 0 and " + MAX_WEIGHT_KG + " kg.");
+        }
+        boolean island = interIsland != null ? interIsland : p.isInterIsland();
+        double fee = feeService.computeBreakdown(finalWeight, finalService, finalVehicle, island, finalDistance).getTotalFee();
+        repository.updateDetails(parcelId, finalSender, finalReceiver, finalPickUp, finalDropOff, finalWeight, fee, finalVehicle, finalService, finalDistance, island);
+        return repository.findById(parcelId);
     }
 
     // Public code like LAYAG-D7K3-9P2M-5Q8X that the sender receives at booking.

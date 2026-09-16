@@ -6,6 +6,9 @@ import java.util.ArrayList;
 
 public class FeeService {
     public static final double INTER_ISLAND_SURCHARGE = 100.0;
+    // Distance factor (per km). Covers fuel + wear; makes the fee weight AND
+    // distance driven, matching the spec's "weight, distance, type of transport".
+    public static final double PER_KM_RATE = 15.0;
 
     private ArrayList<RateTier> rateTiers;
 
@@ -61,30 +64,40 @@ public class FeeService {
         return weightKg * getRatePerKg(weightKg);
     }
 
-    // Convenience overload: assumes VAN when no vehicle given.
-    public double computeTotalFee(double weightKg, String serviceType) {
-        return computeTotalFee(weightKg, serviceType, "VAN");
+    public double computeTotalFee(double weightKg, String serviceType, String vehicleType) {
+        return computeTotalFee(weightKg, serviceType, vehicleType, 0);
     }
 
-    public double computeTotalFee(double weightKg, String serviceType, String vehicleType) {
+    public double computeTotalFee(double weightKg, String serviceType, String vehicleType, double distanceKm) {
         double base = computeBaseFee(weightKg);
-        double fee = base * getMultiplier(serviceType) * getVehicleMultiplier(vehicleType);
+        double fee = base * getMultiplier(serviceType) * getVehicleMultiplier(vehicleType)
+            + Math.max(0, distanceKm) * PER_KM_RATE;
         return Math.round(fee * 100.0) / 100.0;
     }
 
     // Full itemized receipt for the UI / demo.
     public FeeBreakdown computeBreakdown(double weightKg, String serviceType, boolean interIsland) {
-        return computeBreakdown(weightKg, serviceType, "VAN", interIsland);
+        return computeBreakdown(weightKg, serviceType, "VAN", interIsland, 0);
     }
 
     public FeeBreakdown computeBreakdown(double weightKg, String serviceType, String vehicleType, boolean interIsland) {
+        return computeBreakdown(weightKg, serviceType, vehicleType, interIsland, 0);
+    }
+
+    public FeeBreakdown computeBreakdown(double weightKg, String serviceType, boolean interIsland, double distanceKm) {
+        return computeBreakdown(weightKg, serviceType, "VAN", interIsland, distanceKm);
+    }
+
+    public FeeBreakdown computeBreakdown(double weightKg, String serviceType, String vehicleType, boolean interIsland, double distanceKm) {
         double rate = getRatePerKg(weightKg);
         double base = weightKg * rate;
         double multiplier = getMultiplier(serviceType);
         double vehicleMultiplier = getVehicleMultiplier(vehicleType);
+        double dist = Math.max(0, distanceKm);
+        double distanceFee = dist * PER_KM_RATE;
         double surcharge = interIsland ? INTER_ISLAND_SURCHARGE : 0.0;
-        double total = base * multiplier * vehicleMultiplier + surcharge;
+        double total = base * multiplier * vehicleMultiplier + distanceFee + surcharge;
         total = Math.round(total * 100.0) / 100.0;
-        return new FeeBreakdown(weightKg, getTierLabel(weightKg), rate, base, multiplier, vehicleMultiplier, surcharge, total);
+        return new FeeBreakdown(weightKg, getTierLabel(weightKg), rate, base, multiplier, vehicleMultiplier, dist, distanceFee, surcharge, total);
     }
 }

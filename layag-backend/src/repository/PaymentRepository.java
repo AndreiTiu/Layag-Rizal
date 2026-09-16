@@ -9,4 +9,6 @@ public interface PaymentRepository {
     ArrayList<Payment> findAll();
     // Sets status and (optional) gateway reference; paid_at is set when status = COMPLETED.
     void updateStatus(int paymentId, String status, String reference);
+    // Re-price an unpaid row after the sender edits the request (PENDING only).
+    void updateAmount(int paymentId, double amount);
 }

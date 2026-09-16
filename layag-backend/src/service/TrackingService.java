@@ -19,14 +19,22 @@ public class TrackingService {
 
     // CORE ALGORITHM: only legal status jumps are allowed.
     // REGISTERED -> PICKED_UP -> IN_TRANSIT -> OUT_FOR_DELIVERY -> DELIVERED
-    // Terminals: DELIVERED, FAILED, RETURNED. REGISTERED -> FAILED also allowed.
+    // Terminals: DELIVERED, FAILED, RETURNED, CANCELLED.
+    // REGISTERED -> FAILED also allowed; CANCELLED is the customer-initiated exit.
     private Map<String, ArrayList<String>> buildValidTransitions() {
         Map<String, ArrayList<String>> map = new HashMap<>();
-        map.put("REGISTERED",       new ArrayList<>(Arrays.asList("PICKED_UP", "FAILED")));
+        map.put("REGISTERED",       new ArrayList<>(Arrays.asList("PICKED_UP", "FAILED", "CANCELLED")));
         map.put("PICKED_UP",        new ArrayList<>(Arrays.asList("IN_TRANSIT")));
         map.put("IN_TRANSIT",       new ArrayList<>(Arrays.asList("IN_TRANSIT", "OUT_FOR_DELIVERY", "FAILED")));
         map.put("OUT_FOR_DELIVERY", new ArrayList<>(Arrays.asList("DELIVERED", "FAILED", "RETURNED")));
         return map;
+    }
+
+    // Non-transition lifecycle events that land on the timeline WITHOUT moving
+    // the parcel to a new machine state (confirm / reschedule / edit / address
+    // change). Unrestricted by the state machine by design.
+    public void recordEvent(int parcelId, String event, String location, String updatedBy) {
+        historyRepo.addEvent(parcelId, event, location, updatedBy);
     }
 
     public boolean canTransition(String from, String to) {
@@ -50,7 +58,7 @@ public class TrackingService {
     }
 
     private boolean isTerminal(String status) {
-        return status.equals("DELIVERED") || status.equals("FAILED") || status.equals("RETURNED");
+        return status.equals("DELIVERED") || status.equals("FAILED") || status.equals("RETURNED") || status.equals("CANCELLED");
     }
 
     public ArrayList<StatusEvent> getTimeline(int parcelId) {

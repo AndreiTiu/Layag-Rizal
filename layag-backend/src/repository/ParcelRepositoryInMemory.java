@@ -8,12 +8,49 @@ public class ParcelRepositoryInMemory implements ParcelRepository {
     private int nextId = 1;
 
     @Override
-    public Parcel registerParcel(String sender, String receiver, double weight, double fee, String vehicleType, String trackingCode, String serviceType, int createdByUserId) {
-        Parcel p = new Parcel(nextId++, sender, receiver, weight, fee, vehicleType, trackingCode);
+    public Parcel registerParcel(String sender, String receiver, double weight, double fee, String vehicleType, String trackingCode, String serviceType, int createdByUserId, String pickUpAddress, String dropOffAddress, double distanceKm, boolean interIsland) {
+        Parcel p = new Parcel(nextId++, sender, receiver, weight, fee, vehicleType, trackingCode, pickUpAddress, dropOffAddress, distanceKm, interIsland, false);
         p.setServiceType(serviceType);
         p.setCreatedByUserId(createdByUserId);
         parcels.add(p);
         return p;
+    }
+
+    @Override
+    public ArrayList<Parcel> findByCreatedBy(int userId) {
+        ArrayList<Parcel> result = new ArrayList<>();
+        for (Parcel p : parcels) {
+            if (p.getCreatedByUserId() == userId) {
+                result.add(p);
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void confirm(int id) {
+        Parcel p = findById(id);
+        if (p != null) {
+            p.setConfirmed(true);
+        }
+    }
+
+    @Override
+    public void updateDetails(int id, String sender, String receiver, String pickUpAddress, String dropOffAddress, double weight, double fee, String vehicleType, String serviceType, double distanceKm, boolean interIsland) {
+        Parcel p = findById(id);
+        if (p == null) {
+            return;
+        }
+        p.setSenderName(sender);
+        p.setReceiverName(receiver);
+        p.setPickUpAddress(pickUpAddress);
+        p.setDropOffAddress(dropOffAddress);
+        p.setWeightKg(weight);
+        p.setFee(fee);
+        p.setVehicleType(vehicleType);
+        p.setServiceType(serviceType);
+        p.setDistanceKm(distanceKm);
+        p.setInterIsland(interIsland);
     }
 
     @Override

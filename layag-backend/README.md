@@ -53,6 +53,8 @@ See `API-REFERENCE.md` for the full contract. Quick map:
 - Brute-force lockout binds to the real socket IP (`X-Forwarded-For` ignored).
 - Passwords PBKDF2-HmacSHA256 (per-account salt); legacy hashes auto-upgrade.
 
-## Seed accounts (password: `pass123`)
-`admin@layag.ph` (ADMIN) · `cora@layag.ph` / `ana@layag.ph` (COURIER) ·
-`juan@layag.ph` / `andre@layag.ph` (SENDER)
+## Seed accounts
+`admin@layag.ph` / `admin123` (ADMIN) · `juan@layag.ph` / `andre@layag.ph`
+(password `pass123`, SENDER). Riders/provisioned via `POST /api/admin/riders`:
+`anna2@layag.ph` (VAN, cap 3), `ben2@layag.ph` (MOTORCYCLE, cap 2),
+`mia2@layag.ph` (VAN, cap 4). No self-serve admin/courier — see schema.sql seed.

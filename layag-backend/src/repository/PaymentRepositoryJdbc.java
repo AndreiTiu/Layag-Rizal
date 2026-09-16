@@ -75,6 +75,19 @@ public class PaymentRepositoryJdbc implements PaymentRepository {
         }
     }
 
+    @Override
+    public void updateAmount(int paymentId, double amount) {
+        String sql = "UPDATE payments SET amount = ? WHERE payment_id = ? AND status = 'PENDING'";
+        try (Connection conn = DbConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setDouble(1, amount);
+            ps.setInt(2, paymentId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update payment amount: " + e.getMessage(), e);
+        }
+    }
+
     private Payment map(ResultSet rs) throws SQLException {
         return new Payment(
             rs.getInt("payment_id"),

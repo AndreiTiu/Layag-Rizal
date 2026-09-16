@@ -11,6 +11,11 @@ import model.DashboardSummary;
 import model.AuthSession;
 import model.Payment;
 import model.FeeBreakdown;
+import model.ParcelAssignment;
+import model.RiderProfile;
+import model.Rating;
+import model.Notification;
+import model.DeliveryProof;
 import mail.Mailer;
 import mail.DemoMailer;
 import mail.ResendMailer;
@@ -31,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.Base64;
 
 public class ApiServer {
     private final ParcelService parcelService;
@@ -41,6 +47,11 @@ public class ApiServer {
     private final AuthSessionService sessionService;
     private final PaymentService paymentService;
     private final FeeService feeService;
+    private final AssignmentService assignmentService;
+    private final RatingService ratingService;
+    private final NotificationService notificationService;
+    private final DeliveryProofService deliveryProofService;
+    private final UserRepository userRepo;
     private final Mailer mailer;
     private final EmailVerificationService emailVerificationService;
 
@@ -77,6 +88,9 @@ public class ApiServer {
         this.reportService = new ReportService(parcelRepo);
         this.sessionService = new AuthSessionService();
         this.paymentService = new PaymentService(new PaymentRepositoryJdbc());
+        this.assignmentService = new AssignmentService(new RiderRepositoryJdbc(), new AssignmentRepositoryJdbc(), new RatingRepositoryJdbc());
+        this.ratingService = new RatingService(new RatingRepositoryJdbc());
+        this.userRepo = userRepo;
         // Real email OTP when a Resend API key is configured; otherwise fall
         // back to the simulated DemoMailer so the project still runs offline.
         String mailKey = Config.get("mail.resendApiKey", "LAYAG_MAIL_RESEND_APIKEY", "");
@@ -87,6 +101,8 @@ public class ApiServer {
                 Config.get("mail.from", "LAYAG_MAIL_FROM", "LAYAG <onboarding@resend.dev>"));
         }
         this.emailVerificationService = new EmailVerificationService(userRepo, this.mailer);
+        this.notificationService = new NotificationService(new NotificationRepositoryJdbc(), this.mailer);
+        this.deliveryProofService = new DeliveryProofService(new DeliveryProofRepositoryJdbc());
     }
 
     public static void main(String[] args) throws IOException {
@@ -103,7 +119,13 @@ public class ApiServer {
         server.createContext("/api/register", ex -> { if (api.corsGuard(ex)) return; api.handleRegister(ex); });
         server.createContext("/api/login", ex -> { if (api.corsGuard(ex)) return; api.handleLogin(ex); });
         server.createContext("/api/parcels", ex -> { if (api.corsGuard(ex)) return; api.handleParcels(ex); });
+        server.createContext("/api/parcels/my", ex -> { if (api.corsGuard(ex)) return; api.handleMyParcels(ex); });
+        server.createContext("/api/my-parcels", ex -> { if (api.corsGuard(ex)) return; api.handleMyParcels(ex); });
         server.createContext("/api/parcels/status", ex -> { if (api.corsGuard(ex)) return; api.handleStatus(ex); });
+        server.createContext("/api/parcels/cancel", ex -> { if (api.corsGuard(ex)) return; api.handleCancel(ex); });
+        server.createContext("/api/parcels/edit", ex -> { if (api.corsGuard(ex)) return; api.handleEdit(ex); });
+        server.createContext("/api/parcels/confirm", ex -> { if (api.corsGuard(ex)) return; api.handleConfirmParcel(ex); });
+        server.createContext("/api/parcels/reschedule", ex -> { if (api.corsGuard(ex)) return; api.handleReschedule(ex); });
         server.createContext("/api/gps", ex -> { if (api.corsGuard(ex)) return; api.handleGps(ex); });
         server.createContext("/api/admin/summary", ex -> { if (api.corsGuard(ex)) return; api.handleAdminSummary(ex); });
         server.createContext("/api/users/profile", ex -> { if (api.corsGuard(ex)) return; api.handleProfile(ex); });
@@ -111,7 +133,24 @@ public class ApiServer {
         server.createContext("/api/payments/confirm-collect", ex -> { if (api.corsGuard(ex)) return; api.handlePaymentCollect(ex); });
         server.createContext("/api/payments/parcel", ex -> { if (api.corsGuard(ex)) return; api.handlePaymentByParcel(ex); });
         server.createContext("/api/payments/receipt", ex -> { if (api.corsGuard(ex)) return; api.handlePaymentReceipt(ex); });
+        server.createContext("/api/payments/my", ex -> { if (api.corsGuard(ex)) return; api.handleMyPayments(ex); });
         server.createContext("/api/admin/payments", ex -> { if (api.corsGuard(ex)) return; api.handleAdminPayments(ex); });
+        server.createContext("/api/admin/riders", ex -> { if (api.corsGuard(ex)) return; api.handleAdminRiders(ex); });
+        server.createContext("/api/admin/assign", ex -> { if (api.corsGuard(ex)) return; api.handleAdminAssign(ex); });
+        server.createContext("/api/riders/me", ex -> { if (api.corsGuard(ex)) return; api.handleRiderMe(ex); });
+        server.createContext("/api/riders/availability", ex -> { if (api.corsGuard(ex)) return; api.handleRiderAvailability(ex); });
+        server.createContext("/api/riders/jobs/accept", ex -> { if (api.corsGuard(ex)) return; api.handleRiderAccept(ex); });
+        server.createContext("/api/riders/jobs/decline", ex -> { if (api.corsGuard(ex)) return; api.handleRiderDecline(ex); });
+        server.createContext("/api/riders/jobs", ex -> { if (api.corsGuard(ex)) return; api.handleRiderJobs(ex); });
+        server.createContext("/api/riders/earnings", ex -> { if (api.corsGuard(ex)) return; api.handleRiderEarnings(ex); });
+        server.createContext("/api/ratings", ex -> { if (api.corsGuard(ex)) return; api.handleRating(ex); });
+        server.createContext("/api/ratings/parcel", ex -> { if (api.corsGuard(ex)) return; api.handleRatingByParcel(ex); });
+        server.createContext("/api/ratings/rider", ex -> { if (api.corsGuard(ex)) return; api.handleRatingByRider(ex); });
+        server.createContext("/api/notifications", ex -> { if (api.corsGuard(ex)) return; api.handleNotifications(ex); });
+        server.createContext("/api/notifications/read", ex -> { if (api.corsGuard(ex)) return; api.handleNotificationRead(ex); });
+        server.createContext("/api/notifications/read-all", ex -> { if (api.corsGuard(ex)) return; api.handleNotificationReadAll(ex); });
+        server.createContext("/api/proofs/photo", ex -> { if (api.corsGuard(ex)) return; api.handleProofPhoto(ex); });
+        server.createContext("/api/proofs", ex -> { if (api.corsGuard(ex)) return; api.handleProof(ex); });
         server.createContext("/api/verify", ex -> { if (api.corsGuard(ex)) return; api.handleVerify(ex); });
         server.createContext("/api/verify/resend", ex -> { if (api.corsGuard(ex)) return; api.handleVerifyResend(ex); });
         server.createContext("/api/logout", ex -> { if (api.corsGuard(ex)) return; api.handleLogout(ex); });
@@ -320,18 +359,23 @@ public class ApiServer {
             Map<String, String> body = parseBody(ex.getRequestBody());
             try {
                 double weight = Double.parseDouble(body.get("weight"));
+                boolean interIsland = "true".equalsIgnoreCase(body.getOrDefault("interIsland", "false"));
+                double distance = resolveDistance(body);
                 Parcel p = parcelService.registerParcel(
                     body.get("sender"),
                     body.get("receiver"),
                     weight,
                     body.get("service") != null ? body.get("service") : "regular",
                     body.get("vehicle") != null ? body.get("vehicle") : "VAN",
-                    false,
-                    session.getUserId()
+                    interIsland,
+                    session.getUserId(),
+                    body.get("pickupAddress"),
+                    body.get("dropoffAddress"),
+                    distance
                 );
                 trackingService.recordInitialStatus(p.getParcelId(), body.getOrDefault("updatedBy", "branch_staff"));
                 // One transaction per parcel: COD (default) or ONLINE (mock gateway).
-                String method = body.getOrDefault("paymentMethod", "COD").toUpperCase();
+                String method = normalizePaymentMethod(body.getOrDefault("paymentMethod", "COD"));
                 paymentService.createForParcel(p.getParcelId(), p.getFee(), method);
                 send(ex, 200, JsonUtil.obj(
                     "status", JsonUtil.quote("ok"),
@@ -340,6 +384,10 @@ public class ApiServer {
                     "fee", String.valueOf(p.getFee()),
                     "currentStatus", JsonUtil.quote(p.getCurrentStatus()),
                     "vehicle", JsonUtil.quote(p.getVehicleType()),
+                    "pickupAddress", JsonUtil.quote(p.getPickUpAddress()),
+                    "dropoffAddress", JsonUtil.quote(p.getDropOffAddress()),
+                    "distanceKm", String.valueOf(p.getDistanceKm()),
+                    "interIsland", String.valueOf(interIsland),
                     "paymentMethod", JsonUtil.quote(method)
                 ));
             } catch (Exception e) {
@@ -419,7 +467,12 @@ public class ApiServer {
                     "weightKg", String.valueOf(p.getWeightKg()),
                     "fee", String.valueOf(p.getFee()),
                     "currentStatus", JsonUtil.quote(p.getCurrentStatus()),
-                    "vehicle", JsonUtil.quote(p.getVehicleType())
+                    "vehicle", JsonUtil.quote(p.getVehicleType()),
+                    "pickupAddress", JsonUtil.quote(p.getPickUpAddress()),
+                    "dropoffAddress", JsonUtil.quote(p.getDropOffAddress()),
+                    "distanceKm", String.valueOf(p.getDistanceKm()),
+                    "interIsland", String.valueOf(p.isInterIsland()),
+                    "confirmed", String.valueOf(p.isConfirmed())
                 ));
             }
         }
@@ -431,7 +484,8 @@ public class ApiServer {
             return;
         }
         // Only couriers and admins may move a parcel's status.
-        if (requireRole(ex, "COURIER", "ADMIN") == null) {
+        AuthSession session = requireRole(ex, "COURIER", "ADMIN");
+        if (session == null) {
             return;
         }
         try {
@@ -452,14 +506,33 @@ public class ApiServer {
                 return;
             }
 
+            // Assignment gate: once a rider owns a job, only THAT rider (or an
+            // admin) may move the parcel further - nobody else impersonates the
+            // driver on an order.
+            if (!"ADMIN".equals(session.getRole())
+                    && !assignmentService.isAssignedTo(p.getParcelId(), session.getUserId())) {
+                send(ex, 403, JsonUtil.error("Forbidden: update deliveries assigned to you."));
+                return;
+            }
+
             trackingService.updateStatus(p.getParcelId(), toStatus, location, updatedBy, p.getCurrentStatus());
             parcelService.updateStatus(p.getParcelId(), toStatus);
             // Cash on delivery: payment completes the moment cash is collected.
             if ("DELIVERED".equals(toStatus)) {
                 Payment pmt = paymentService.getByParcel(p.getParcelId());
-                if (pmt != null && "COD".equals(pmt.getMethod())) {
+                if (pmt != null && ("CASH".equals(pmt.getMethod()) || "COD".equals(pmt.getMethod()))) {
                     paymentService.confirmCollected(p.getParcelId());
                 }
+            }
+            // Terminal states close the rider's slot (and count as earnings).
+            if ("DELIVERED".equals(toStatus) || "FAILED".equals(toStatus)
+                    || "RETURNED".equals(toStatus) || "CANCELLED".equals(toStatus)) {
+                assignmentService.closeForParcel(p.getParcelId(), toStatus);
+            }
+            if (p.getCreatedByUserId() > 0) {
+                notify(p.getCreatedByUserId(), "PARCEL_STATUS",
+                    "Delivery update: " + p.getTrackingCode(),
+                    "Your parcel " + p.getTrackingCode() + " is now " + toStatus.replace('_', ' ') + ".");
             }
             send(ex, 200, JsonUtil.obj(
                 "status", JsonUtil.quote("ok"),
@@ -472,9 +545,193 @@ public class ApiServer {
         }
     }
 
-    // ---- Payments ----
+    // Sender's own bookings: GET /api/parcels/my
+    private void handleMyParcels(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        send(ex, 200, "{\"status\":\"ok\",\"parcels\":" + parcelsJson(parcelService.parcelsByOwner(session.getUserId())) + "}");
+    }
 
-    // ONLINE: customer pays through the (mock) gateway -> POST /api/payments/charge
+    // Cancel before pickup: POST /api/parcels/cancel {code|id}
+    private void handleCancel(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireSession(ex) == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (requireOwner(ex, p) == null) {
+                return;
+            }
+            if (!"REGISTERED".equals(p.getCurrentStatus())) {
+                send(ex, 400, JsonUtil.error("Only a REGISTERED (not yet picked up) parcel can be cancelled."));
+                return;
+            }
+            trackingService.updateStatus(p.getParcelId(), "CANCELLED", body.getOrDefault("location", "Customer request"), body.getOrDefault("updatedBy", "customer"), p.getCurrentStatus());
+            parcelService.updateStatus(p.getParcelId(), "CANCELLED");
+            assignmentService.closeForParcel(p.getParcelId(), "CANCELLED");
+            ParcelAssignment freed = assignmentService.byParcel(p.getParcelId());
+            if (freed != null && freed.getRiderUserId() > 0) {
+                notify(freed.getRiderUserId(), "PARCEL_STATUS",
+                    "Delivery cancelled",
+                    "Parcel " + p.getTrackingCode() + " was cancelled by the sender.");
+            }
+            send(ex, 200, JsonUtil.obj("status", JsonUtil.quote("ok"), "trackingCode", JsonUtil.quote(p.getTrackingCode()), "currentStatus", JsonUtil.quote("CANCELLED")));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Edit before assignment: POST /api/parcels/edit {code|id, sender?, receiver?,
+    // pickupAddress?, dropoffAddress?, weight?, vehicle?, service?, interIsland?, distanceKm?}
+    private void handleEdit(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireSession(ex) == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (requireOwner(ex, p) == null) {
+                return;
+            }
+            if (!"REGISTERED".equals(p.getCurrentStatus())) {
+                send(ex, 400, JsonUtil.error("Edits are only allowed before the parcel is picked up."));
+                return;
+            }
+            Double newWeight = body.get("weight") == null ? null : Double.valueOf(body.get("weight"));
+            Double newDistance = body.get("distanceKm") == null ? null : Double.valueOf(body.get("distanceKm"));
+            Boolean newIsland = body.get("interIsland") == null ? null : Boolean.valueOf(body.get("interIsland"));
+            Parcel updated = parcelService.editParcel(
+                p.getParcelId(),
+                body.get("sender"),
+                body.get("receiver"),
+                body.get("pickupAddress"),
+                body.get("dropoffAddress"),
+                newWeight,
+                body.get("service"),
+                body.get("vehicle"),
+                newIsland,
+                newDistance
+            );
+            // Re-price the (unpaid) payment row so amount always matches the fee.
+            paymentService.reprice(p.getParcelId(), updated.getFee());
+            trackingService.recordEvent(p.getParcelId(), "PARCEL_EDITED", "Details edited before assignment", body.getOrDefault("updatedBy", "customer"));
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "trackingCode", JsonUtil.quote(updated.getTrackingCode()),
+                "fee", String.valueOf(updated.getFee()),
+                "weightKg", String.valueOf(updated.getWeightKg()),
+                "vehicle", JsonUtil.quote(updated.getVehicleType()),
+                "pickupAddress", JsonUtil.quote(updated.getPickUpAddress()),
+                "dropoffAddress", JsonUtil.quote(updated.getDropOffAddress()),
+                "distanceKm", String.valueOf(updated.getDistanceKm())
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Confirm parcel details/weight: POST /api/parcels/confirm {code|id}
+    private void handleConfirmParcel(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireSession(ex) == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (requireOwner(ex, p) == null) {
+                return;
+            }
+            if (!"REGISTERED".equals(p.getCurrentStatus())) {
+                send(ex, 400, JsonUtil.error("Only a REGISTERED parcel can be confirmed."));
+                return;
+            }
+            parcelService.confirmParcel(p.getParcelId());
+            trackingService.recordEvent(p.getParcelId(), "CONFIRMED", body.getOrDefault("location", "Details verified"), body.getOrDefault("updatedBy", "customer"));
+            // The moment a sender confirms the details, the system finds the
+            // best available rider for this parcel (vehicle match + capacity).
+            ParcelAssignment assigned = assignmentService.autoAssign(p);
+            String assignJson = "null";
+            if (assigned != null) {
+                trackingService.recordEvent(p.getParcelId(), "ASSIGNED",
+                    "Auto-assigned to rider " + assigned.getRiderUserId(), "system");
+                assignJson = assignmentJson(assigned);
+                notify(assigned.getRiderUserId(), "ASSIGNMENT",
+                    "You have a new delivery",
+                    "Parcel " + p.getTrackingCode() + " (" + p.getPickUpAddress() + " \u2192 " + p.getDropOffAddress() + ") is assigned to you.");
+            }
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "trackingCode", JsonUtil.quote(p.getTrackingCode()),
+                "confirmed", "true",
+                "assignment", assignJson
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Reschedule before pickup: POST /api/parcels/reschedule {code|id, note?}
+    private void handleReschedule(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireSession(ex) == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (requireOwner(ex, p) == null) {
+                return;
+            }
+            if (!"REGISTERED".equals(p.getCurrentStatus())) {
+                send(ex, 400, JsonUtil.error("A parcel already picked up cannot be rescheduled."));
+                return;
+            }
+            trackingService.recordEvent(p.getParcelId(), "RESCHEDULED", body.getOrDefault("note", "Rescheduled by customer"), body.getOrDefault("updatedBy", "customer"));
+            send(ex, 200, JsonUtil.obj("status", JsonUtil.quote("ok"), "trackingCode", JsonUtil.quote(p.getTrackingCode()), "event", JsonUtil.quote("RESCHEDULED")));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // ---- Payments ----
     private void handlePaymentCharge(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
             send(ex, 405, JsonUtil.error("Use POST"));
@@ -494,6 +751,11 @@ public class ApiServer {
                 return;
             }
             Payment pmt = paymentService.chargeOnline(p.getParcelId());
+            if ("COMPLETED".equals(pmt.getStatus()) && p.getCreatedByUserId() > 0) {
+                notify(p.getCreatedByUserId(), "PAYMENT",
+                    "Payment received",
+                    "Payment of Php " + pmt.getAmount() + " for " + p.getTrackingCode() + " is complete (ref " + pmt.getReference() + ").");
+            }
             send(ex, 200, paymentJson(pmt));
         } catch (Exception e) {
             send(ex, 400, JsonUtil.error(e.getMessage()));
@@ -517,6 +779,11 @@ public class ApiServer {
                 return;
             }
             Payment pmt = paymentService.confirmCollected(p.getParcelId());
+            if ("COMPLETED".equals(pmt.getStatus()) && p.getCreatedByUserId() > 0) {
+                notify(p.getCreatedByUserId(), "PAYMENT",
+                    "Payment received",
+                    "Cash payment of Php " + pmt.getAmount() + " for " + p.getTrackingCode() + " was collected at drop-off.");
+            }
             send(ex, 200, paymentJson(pmt));
         } catch (Exception e) {
             send(ex, 400, JsonUtil.error(e.getMessage()));
@@ -573,10 +840,11 @@ public class ApiServer {
                 return;
             }
             Payment pmt = paymentService.getByParcel(p.getParcelId());
-            // Itemized parts (rebuilt from stored inputs). interIsland is not stored
-            // on the parcel, so the surcharge is derived: whatever is above the base.
-            FeeBreakdown bd = feeService.computeBreakdown(p.getWeightKg(), p.getServiceType(), p.getVehicleType(), false);
-            double surcharge = Math.max(0, p.getFee() - bd.getTotalFee());
+            // Itemized parts rebuilt from the SAME inputs that produced the fee
+            // (weight, service, vehicle, distance, inter-island), so the receipt
+            // always reconciles exactly with Parcel.fee.
+            FeeBreakdown bd = feeService.computeBreakdown(p.getWeightKg(), p.getServiceType(), p.getVehicleType(), p.isInterIsland(), p.getDistanceKm());
+            double surcharge = p.isInterIsland() ? FeeService.INTER_ISLAND_SURCHARGE : 0.0;
             send(ex, 200, JsonUtil.obj(
                 "status", JsonUtil.quote("ok"),
                 "trackingCode", JsonUtil.quote(p.getTrackingCode()),
@@ -588,6 +856,9 @@ public class ApiServer {
                 "fee", String.valueOf(p.getFee()),
                 "tierLabel", JsonUtil.quote(bd.getTierLabel()),
                 "ratePerKg", String.valueOf(bd.getRatePerKg()),
+                "baseFee", String.valueOf(bd.getBaseFee()),
+                "distanceKm", String.valueOf(bd.getDistanceKm()),
+                "distanceFee", String.valueOf(bd.getDistanceFee()),
                 "serviceMultiplier", String.valueOf(bd.getMultiplier()),
                 "vehicleMultiplier", String.valueOf(bd.getVehicleMultiplier()),
                 "interIslandSurcharge", String.valueOf(surcharge),
@@ -609,7 +880,7 @@ public class ApiServer {
         }
         ArrayList<Payment> all = paymentService.allPayments();
         double collected = 0, pending = 0;
-        int codCount = 0, onlineCount = 0;
+        int codCount = 0, onlineCount = 0, ewalletCount = 0;
         StringBuilder arr = new StringBuilder("[");
         for (int i = 0; i < all.size(); i++) {
             Payment pmt = all.get(i);
@@ -622,7 +893,14 @@ public class ApiServer {
             } else {
                 pending += pmt.getAmount();
             }
-            if ("COD".equals(pmt.getMethod())) codCount++; else onlineCount++;
+            String m = pmt.getMethod();
+            if ("EWALLET".equals(m)) {
+                ewalletCount++;
+            } else if ("CARD".equals(m) || "ONLINE".equals(m)) {
+                onlineCount++;
+            } else {
+                codCount++;
+            }
         }
         arr.append("]");
         send(ex, 200, JsonUtil.obj(
@@ -631,6 +909,7 @@ public class ApiServer {
             "totalPending", String.valueOf(pending),
             "codCount", String.valueOf(codCount),
             "onlineCount", String.valueOf(onlineCount),
+            "ewalletCount", String.valueOf(ewalletCount),
             "payments", arr.toString()
         ));
     }
@@ -653,6 +932,50 @@ public class ApiServer {
             return parcelService.trackParcel(Integer.parseInt(q.get("id")));
         }
         return null;
+    }
+
+    // Distance for the fee: an explicit distanceKm wins; otherwise compute
+    // straight-line km from pickup/drop-off coordinates via Haversine and apply
+    // a 1.25 road factor (roads are longer than the straight line). Zero when
+    // the client gave neither (no distance fee charged).
+    private double resolveDistance(Map<String, String> body) {
+        if (body.get("distanceKm") != null && !body.get("distanceKm").isEmpty()) {
+            double d = Double.parseDouble(body.get("distanceKm"));
+            return Math.max(0, d);
+        }
+        if (hasCoord(body, "pickupLat") && hasCoord(body, "pickupLng")
+                && hasCoord(body, "dropLat") && hasCoord(body, "dropLng")) {
+            double straight = gpsService.distanceKm(
+                Double.parseDouble(body.get("pickupLat")),
+                Double.parseDouble(body.get("pickupLng")),
+                Double.parseDouble(body.get("dropLat")),
+                Double.parseDouble(body.get("dropLng"))
+            );
+            return Math.round(straight * 1.25 * 100.0) / 100.0;
+        }
+        return 0;
+    }
+
+    private boolean hasCoord(Map<String, String> body, String key) {
+        String v = body.get(key);
+        return v != null && !v.isEmpty();
+    }
+
+    // Payment methods per the spec: CASH / CARD / EWALLET (legacy COD/ONLINE
+    // accepted for backwards compatibility). CARD|EWALLET behave like ONLINE
+    // (gateway); CASH behaves like COD (collection at drop-off).
+    private String normalizePaymentMethod(String raw) {
+        if (raw == null) {
+            return "CASH";
+        }
+        switch (raw.toUpperCase()) {
+            case "COD":
+                return "CASH";
+            case "ONLINE":
+                return "CARD";
+            default:
+                return raw.toUpperCase();
+        }
     }
 
     private String paymentJson(Payment pmt) {
@@ -722,6 +1045,712 @@ public class ApiServer {
         } catch (Exception e) {
             send(ex, 404, JsonUtil.error("tracker.html not found in project folder"));
         }
+    }
+
+    // ---- Payments - Phase 3: per-user payment history ----
+
+    // Sender sees the status + amount for all their bookings:
+    // GET /api/payments/my
+    private void handleMyPayments(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        ArrayList<Parcel> mine = parcelService.parcelsByOwner(session.getUserId());
+        StringBuilder arr = new StringBuilder("[");
+        boolean first = true;
+        for (Parcel p : mine) {
+            Payment pmt = paymentService.getByParcel(p.getParcelId());
+            if (pmt == null) {
+                continue;
+            }
+            if (!first) {
+                arr.append(",");
+            }
+            first = false;
+            arr.append(JsonUtil.obj(
+                "trackingCode", JsonUtil.quote(p.getTrackingCode()),
+                "sender", JsonUtil.quote(p.getSenderName()),
+                "receiver", JsonUtil.quote(p.getReceiverName()),
+                "fee", String.valueOf(p.getFee()),
+                "payment", paymentJson(pmt)
+            ));
+        }
+        arr.append("]");
+        send(ex, 200, "{\"status\":\"ok\",\"payments\":" + arr + "}");
+    }
+
+    // ---- Rider management & assignment (Phase 2) ----
+    // Admin roster: GET /api/admin/riders (list).
+    // Admin provisioning: POST /api/admin/riders {name, email, password?, vehicle?, maxConcurrent?}
+    private void handleAdminRiders(HttpExchange ex) throws IOException {
+        if (requireRole(ex, "ADMIN") == null) {
+            return;
+        }
+        if ("GET".equals(ex.getRequestMethod())) {
+            ArrayList<RiderProfile> roster = assignmentService.roster();
+            StringBuilder arr = new StringBuilder("[");
+            for (int i = 0; i < roster.size(); i++) {
+                RiderProfile r = roster.get(i);
+                if (i > 0) {
+                    arr.append(",");
+                }
+                User u = userRepo.findById(r.getRiderUserId());
+                arr.append(JsonUtil.obj(
+                    "riderUserId", String.valueOf(r.getRiderUserId()),
+                    "name", JsonUtil.quote(u == null ? "" : u.getName()),
+                    "email", JsonUtil.quote(u == null ? "" : u.getEmail()),
+                    "vehicle", JsonUtil.quote(r.getVehicleType()),
+                    "available", String.valueOf(r.isAvailable()),
+                    "currentLoad", String.valueOf(r.getCurrentLoad()),
+                    "maxConcurrent", String.valueOf(r.getMaxConcurrent()),
+                    "averageRating", String.valueOf(r.getAverageRating()),
+                    "ratingCount", String.valueOf(r.getRatingCount())
+                ));
+            }
+            arr.append("]");
+            send(ex, 200, "{\"status\":\"ok\",\"riders\":" + arr + "}");
+            return;
+        }
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET or POST"));
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            String email = body.get("email");
+            String password = body.get("password");
+            if (password == null || password.isBlank()) {
+                password = randomPassword();
+            }
+            // Public sign-up can never pick COURIER; provisioning goes through
+            // the admin so the trusted-role model stays intact.
+            User rider = authService.register(body.getOrDefault("name", "Rider"), email, password, "COURIER");
+            userRepo.setVerified(rider.getUserId());
+            RiderProfile profile = assignmentService.provision(rider.getUserId(),
+                body.get("vehicle"), body.get("maxConcurrent") == null ? 0 : Integer.parseInt(body.get("maxConcurrent")));
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "riderUserId", String.valueOf(rider.getUserId()),
+                "name", JsonUtil.quote(rider.getName()),
+                "email", JsonUtil.quote(rider.getEmail()),
+                "vehicle", JsonUtil.quote(profile.getVehicleType()),
+                "maxConcurrent", String.valueOf(profile.getMaxConcurrent()),
+                "password", JsonUtil.quote(password)
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Manual assignment by admin: POST /api/admin/assign {code|id, riderId}
+    private void handleAdminAssign(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireRole(ex, "ADMIN") == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            int riderId = Integer.parseInt(body.get("riderId"));
+            ParcelAssignment a = assignmentService.assign(p.getParcelId(), riderId);
+            trackingService.recordEvent(p.getParcelId(), "ASSIGNED", "Assigned by admin to rider " + riderId, "admin");
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "trackingCode", JsonUtil.quote(p.getTrackingCode()),
+                "assignment", assignmentJson(a)
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Rider profile/state: GET /api/riders/me
+    private void handleRiderMe(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        RiderProfile p = assignmentService.profile(session.getUserId());
+        if (p == null) {
+            send(ex, 404, JsonUtil.error("No rider profile. Ask an admin to provision you."));
+            return;
+        }
+        send(ex, 200, JsonUtil.obj(
+            "status", JsonUtil.quote("ok"),
+            "name", JsonUtil.quote(session.getName()),
+            "vehicle", JsonUtil.quote(p.getVehicleType()),
+            "available", String.valueOf(p.isAvailable()),
+            "currentLoad", String.valueOf(p.getCurrentLoad()),
+            "maxConcurrent", String.valueOf(p.getMaxConcurrent()),
+            "averageRating", String.valueOf(p.getAverageRating()),
+            "ratingCount", String.valueOf(p.getRatingCount())
+        ));
+    }
+
+    // Rider shift switch: POST /api/riders/availability {available:true|false}
+    private void handleRiderAvailability(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            boolean available = Boolean.parseBoolean(body.getOrDefault("available", "true"));
+            assignmentService.setAvailability(session.getUserId(), available);
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "available", String.valueOf(available)
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Rider work queue: GET /api/riders/jobs?status=ASSIGNED (default ASSIGNED)
+    private void handleRiderJobs(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        Map<String, String> q = parseQuery(ex.getRequestURI().getRawQuery());
+        String status = q.getOrDefault("status", "ASSIGNED");
+        ArrayList<ParcelAssignment> jobs = assignmentService.riderJobs(session.getUserId(), status);
+        send(ex, 200, "{\"status\":\"ok\",\"jobs\":" + jobsJson(jobs) + "}");
+    }
+
+    // Rider accepts a job: POST /api/riders/jobs/accept {assignmentId}
+    private void handleRiderAccept(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            int assignmentId = Integer.parseInt(body.get("assignmentId"));
+            ParcelAssignment a = assignmentService.accept(assignmentId, session.getUserId());
+            trackingService.recordEvent(a.getParcelId(), "RIDER_ACCEPTED",
+                "Rider " + session.getName() + " accepted", "rider");
+            Parcel ap = parcelService.trackParcel(a.getParcelId());
+            if (ap != null && ap.getCreatedByUserId() > 0) {
+                notify(ap.getCreatedByUserId(), "ASSIGNMENT",
+                    "Your rider is on the way",
+                    "Rider " + session.getName() + " accepted your parcel " + ap.getTrackingCode() + ".");
+            }
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "assignment", assignmentJson(a)
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Rider declines a job; the parcel is re-offered to the next rider:
+    // POST /api/riders/jobs/decline {assignmentId, reason?}
+    private void handleRiderDecline(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            int assignmentId = Integer.parseInt(body.get("assignmentId"));
+            ParcelAssignment a = assignmentService.decline(assignmentId, session.getUserId(), body.get("reason"));
+            trackingService.recordEvent(a.getParcelId(), "RIDER_DECLINED",
+                "Rider " + session.getName() + " declined", "rider");
+            Parcel p = parcelService.trackParcel(a.getParcelId());
+            ParcelAssignment next = p == null ? null : assignmentService.reassign(p, session.getUserId());
+            String nextJson = "null";
+            if (next != null) {
+                trackingService.recordEvent(p.getParcelId(), "ASSIGNED",
+                    "Re-assigned to rider " + next.getRiderUserId(), "system");
+                nextJson = assignmentJson(next);
+                notify(next.getRiderUserId(), "ASSIGNMENT",
+                    "You have a new delivery",
+                    "Parcel " + p.getTrackingCode() + " was re-assigned to you (previous rider declined).");
+            }
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "declined", "true",
+                "nextAssignment", nextJson
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Rider earnings: GET /api/riders/earnings
+    private void handleRiderEarnings(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER");
+        if (session == null) {
+            return;
+        }
+        ArrayList<ParcelAssignment> done = assignmentService.riderJobs(session.getUserId(), "COMPLETED");
+        double total = 0;
+        StringBuilder arr = new StringBuilder("[");
+        for (int i = 0; i < done.size(); i++) {
+            ParcelAssignment a = done.get(i);
+            if (i > 0) {
+                arr.append(",");
+            }
+            Parcel p = parcelService.trackParcel(a.getParcelId());
+            double fee = p == null ? 0 : p.getFee();
+            total += fee;
+            arr.append(JsonUtil.obj(
+                "assignmentId", String.valueOf(a.getAssignmentId()),
+                "trackingCode", JsonUtil.quote(p == null ? "" : p.getTrackingCode()),
+                "fee", String.valueOf(fee),
+                "completedAt", JsonUtil.quote(a.getCompletedAt() == null ? "" : a.getCompletedAt())
+            ));
+        }
+        arr.append("]");
+        send(ex, 200, JsonUtil.obj(
+            "status", JsonUtil.quote("ok"),
+            "completedDeliveries", String.valueOf(done.size()),
+            "totalEarnings", String.valueOf(total),
+            "jobs", arr.toString()
+        ));
+    }
+
+    // ---- Notifications (Phase 5) ----
+
+    // In-app inbox: GET /api/notifications (newest 50 + unread count)
+    private void handleNotifications(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        ArrayList<Notification> list = notificationService.list(session.getUserId(), 50);
+        StringBuilder arr = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) {
+                arr.append(",");
+            }
+            Notification n = list.get(i);
+            arr.append(JsonUtil.obj(
+                "notificationId", String.valueOf(n.getNotificationId()),
+                "type", JsonUtil.quote(n.getType()),
+                "title", JsonUtil.quote(n.getTitle()),
+                "message", JsonUtil.quote(n.getMessage()),
+                "isRead", String.valueOf(n.isRead()),
+                "createdAt", JsonUtil.quote(n.getCreatedAt())
+            ));
+        }
+        arr.append("]");
+        send(ex, 200, JsonUtil.obj(
+            "status", JsonUtil.quote("ok"),
+            "unread", String.valueOf(notificationService.unreadCount(session.getUserId())),
+            "notifications", arr.toString()
+        ));
+    }
+
+    // Mark one as read: POST /api/notifications/read {id}
+    private void handleNotificationRead(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            notificationService.markRead(Integer.parseInt(body.get("id")), session.getUserId());
+            send(ex, 200, JsonUtil.obj("status", JsonUtil.quote("ok")));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Mark all as read: POST /api/notifications/read-all
+    private void handleNotificationReadAll(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        notificationService.markAllRead(session.getUserId());
+        send(ex, 200, JsonUtil.obj("status", JsonUtil.quote("ok")));
+    }
+
+    // Fire-and-forget helper: in-app row + email, never breaks the request.
+    private void notify(int userId, String type, String title, String message) {
+        try {
+            User u = userRepo.findById(userId);
+            String email = u == null ? null : u.getEmail();
+            notificationService.notify(userId, email, type, title, message);
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---- Proof of delivery (Phase 6) ----
+
+    // Upload: POST /api/proofs {code|id, photo (base64 or data-URI), notes?, recipientName?}
+    // Only the assigned rider (or an admin) may upload, and only while the
+    // parcel is out for delivery or already delivered.
+    private void handleProof(HttpExchange ex) throws IOException {
+        if ("GET".equals(ex.getRequestMethod())) {
+            handleProofGet(ex);
+            return;
+        }
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        AuthSession session = requireRole(ex, "COURIER", "ADMIN");
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (!"ADMIN".equals(session.getRole())
+                    && !assignmentService.isAssignedTo(p.getParcelId(), session.getUserId())) {
+                send(ex, 403, JsonUtil.error("Forbidden: proof belongs to your assigned deliveries."));
+                return;
+            }
+            String cur = p.getCurrentStatus();
+            if (!"OUT_FOR_DELIVERY".equals(cur) && !"DELIVERED".equals(cur)) {
+                send(ex, 400, JsonUtil.error("A photo can only be uploaded when the parcel is OUT_FOR_DELIVERY or DELIVERED."));
+                return;
+            }
+
+            // Decode the photo (accepts "data:image/png;base64,XXXX" or raw base64).
+            String raw = body.get("photo");
+            if (raw == null || raw.isBlank()) {
+                send(ex, 400, JsonUtil.error("Photo is required."));
+                return;
+            }
+            String mime = "image/jpeg";
+            String ext = "jpg";
+            String b64 = raw;
+            if (raw.startsWith("data:")) {
+                int comma = raw.indexOf(',');
+                String head = raw.substring(0, comma < 0 ? 0 : comma);
+                if (head.contains("png")) {
+                    mime = "image/png";
+                    ext = "png";
+                } else if (head.contains("webp")) {
+                    mime = "image/webp";
+                    ext = "webp";
+                }
+                b64 = raw.substring(comma + 1);
+            }
+            byte[] bytes;
+            try {
+                bytes = Base64.getDecoder().decode(b64.trim());
+            } catch (IllegalArgumentException e) {
+                send(ex, 400, JsonUtil.error("Photo is not valid base64."));
+                return;
+            }
+            if (bytes.length > 3 * 1024 * 1024) {
+                send(ex, 413, JsonUtil.error("Photo too large (max 3 MB)."));
+                return;
+            }
+
+            // Persist the file, then the DB record.
+            String photoName = "proof_" + p.getParcelId() + "." + ext;
+            java.io.File dir = new java.io.File("proofs");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            java.nio.file.Files.write(new java.io.File(dir, photoName).toPath(), bytes);
+            DeliveryProof proof = deliveryProofService.save(p.getParcelId(), session.getUserId(),
+                photoName, body.get("notes"), body.get("recipientName"));
+            send(ex, 200, proofJson(proof));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Metadata for one parcel: GET /api/proofs?code=..
+    private void handleProofGet(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> q = parseQuery(ex.getRequestURI().getRawQuery());
+            Parcel p = resolveParcelByQuery(q);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (!canReadProof(session, p)) {
+                send(ex, 403, JsonUtil.error("Forbidden: no access to this proof."));
+                return;
+            }
+            DeliveryProof proof = deliveryProofService.byParcel(p.getParcelId());
+            send(ex, 200, proof == null
+                ? "{\"status\":\"ok\",\"proof\":null}"
+                : "{\"status\":\"ok\",\"proof\":" + proofJson(proof) + "}");
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // The photo itself: GET /api/proofs/photo?code=..
+    private void handleProofPhoto(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        AuthSession session = requireSession(ex);
+        if (session == null) {
+            return;
+        }
+        try {
+            Map<String, String> q = parseQuery(ex.getRequestURI().getRawQuery());
+            Parcel p = resolveParcelByQuery(q);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            if (!canReadProof(session, p)) {
+                send(ex, 403, JsonUtil.error("Forbidden: no access to this proof."));
+                return;
+            }
+            DeliveryProof proof = deliveryProofService.byParcel(p.getParcelId());
+            if (proof == null) {
+                send(ex, 404, JsonUtil.error("No photo uploaded yet."));
+                return;
+            }
+            java.io.File f = new java.io.File("proofs", proof.getPhotoName());
+            if (!f.exists()) {
+                send(ex, 404, JsonUtil.error("Photo file missing."));
+                return;
+            }
+            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+            String mime = proof.getPhotoName().endsWith(".png") ? "image/png"
+                : proof.getPhotoName().endsWith(".webp") ? "image/webp" : "image/jpeg";
+            ex.getResponseHeaders().set("Content-Type", mime);
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(bytes);
+            }
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Sender, admin and the assigned rider may all see a proof.
+    private boolean canReadProof(AuthSession session, Parcel p) {
+        if ("ADMIN".equals(session.getRole())) {
+            return true;
+        }
+        if (p.getCreatedByUserId() > 0 && p.getCreatedByUserId() == session.getUserId()) {
+            return true;
+        }
+        return assignmentService.isAssignedTo(p.getParcelId(), session.getUserId());
+    }
+
+    private String proofJson(DeliveryProof proof) {
+        return JsonUtil.obj(
+            "proofId", String.valueOf(proof.getProofId()),
+            "parcelId", String.valueOf(proof.getParcelId()),
+            "riderUserId", String.valueOf(proof.getRiderUserId()),
+            "photoName", JsonUtil.quote(proof.getPhotoName()),
+            "notes", JsonUtil.quote(proof.getNotes() == null ? "" : proof.getNotes()),
+            "recipientName", JsonUtil.quote(proof.getRecipientName() == null ? "" : proof.getRecipientName()),
+            "deliveredAt", JsonUtil.quote(proof.getDeliveredAt() == null ? "" : proof.getDeliveredAt())
+        );
+    }
+
+    // ---- Ratings & reviews (Phase 4) ----
+
+    // Sender rates the rider after a completed delivery:
+    // POST /api/ratings {code|id, rating (1-5), comment?}
+    private void handleRating(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use POST"));
+            return;
+        }
+        if (requireSession(ex) == null) {
+            return;
+        }
+        try {
+            Map<String, String> body = parseBody(ex.getRequestBody());
+            Parcel p = resolveParcelByBody(body);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            AuthSession session = requireOwner(ex, p);
+            if (session == null) {
+                return;
+            }
+            if (!"DELIVERED".equals(p.getCurrentStatus())) {
+                send(ex, 400, JsonUtil.error("Only delivered parcels can be rated."));
+                return;
+            }
+            ParcelAssignment a = assignmentService.byParcel(p.getParcelId());
+            int riderId = a == null ? 0 : a.getRiderUserId();
+            Rating r = ratingService.rate(p.getParcelId(), session.getUserId(), riderId,
+                Integer.parseInt(body.get("rating")), body.get("comment"));
+            send(ex, 200, ratingJson(r));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Did this parcel get a rating? GET /api/ratings/parcel?code=..
+    private void handleRatingByParcel(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        try {
+            Map<String, String> q = parseQuery(ex.getRequestURI().getRawQuery());
+            Parcel p = resolveParcelByQuery(q);
+            if (p == null) {
+                send(ex, 404, JsonUtil.error("Parcel not found"));
+                return;
+            }
+            Rating r = ratingService.byParcel(p.getParcelId());
+            send(ex, 200, r == null
+                ? "{\"status\":\"ok\",\"rating\":null}"
+                : "{\"status\":\"ok\",\"rating\":" + ratingJson(r) + "}");
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    // Rider reputation: GET /api/ratings/rider?riderId=..
+    private void handleRatingByRider(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            send(ex, 405, JsonUtil.error("Use GET"));
+            return;
+        }
+        try {
+            Map<String, String> q = parseQuery(ex.getRequestURI().getRawQuery());
+            int riderId = Integer.parseInt(q.get("riderId"));
+            ArrayList<Rating> list = ratingService.forRider(riderId);
+            StringBuilder arr = new StringBuilder("[");
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) {
+                    arr.append(",");
+                }
+                arr.append(ratingJson(list.get(i)));
+            }
+            arr.append("]");
+            send(ex, 200, JsonUtil.obj(
+                "status", JsonUtil.quote("ok"),
+                "riderUserId", String.valueOf(riderId),
+                "average", String.valueOf(ratingService.averageForRider(riderId)),
+                "count", String.valueOf(list.size()),
+                "ratings", arr.toString()
+            ));
+        } catch (Exception e) {
+            send(ex, 400, JsonUtil.error(e.getMessage()));
+        }
+    }
+
+    private String ratingJson(Rating r) {
+        return JsonUtil.obj(
+            "ratingId", String.valueOf(r.getRatingId()),
+            "parcelId", String.valueOf(r.getParcelId()),
+            "riderUserId", String.valueOf(r.getRiderUserId()),
+            "rating", String.valueOf(r.getStars()),
+            "comment", JsonUtil.quote(r.getComment() == null ? "" : r.getComment()),
+            "createdAt", JsonUtil.quote(r.getCreatedAt() == null ? "" : r.getCreatedAt())
+        );
+    }
+
+    private String assignmentJson(ParcelAssignment a) {
+        return JsonUtil.obj(
+            "assignmentId", String.valueOf(a.getAssignmentId()),
+            "parcelId", String.valueOf(a.getParcelId()),
+            "riderUserId", String.valueOf(a.getRiderUserId()),
+            "status", JsonUtil.quote(a.getStatus()),
+            "reason", JsonUtil.quote(a.getReason() == null ? "" : a.getReason()),
+            "assignedAt", JsonUtil.quote(a.getAssignedAt() == null ? "" : a.getAssignedAt()),
+            "decidedAt", JsonUtil.quote(a.getDecidedAt() == null ? "" : a.getDecidedAt()),
+            "completedAt", JsonUtil.quote(a.getCompletedAt() == null ? "" : a.getCompletedAt())
+        );
+    }
+
+    // Work-queue rows: assignment + the parcel's booking details + route.
+    private String jobsJson(ArrayList<ParcelAssignment> jobs) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < jobs.size(); i++) {
+            ParcelAssignment a = jobs.get(i);
+            if (i > 0) {
+                sb.append(",");
+            }
+            Parcel p = parcelService.trackParcel(a.getParcelId());
+            String parcelJson = p == null ? "{}" : JsonUtil.obj(
+                "trackingCode", JsonUtil.quote(p.getTrackingCode()),
+                "sender", JsonUtil.quote(p.getSenderName()),
+                "receiver", JsonUtil.quote(p.getReceiverName()),
+                "weightKg", String.valueOf(p.getWeightKg()),
+                "fee", String.valueOf(p.getFee()),
+                "vehicle", JsonUtil.quote(p.getVehicleType()),
+                "pickupAddress", JsonUtil.quote(p.getPickUpAddress() == null ? "" : p.getPickUpAddress()),
+                "dropoffAddress", JsonUtil.quote(p.getDropOffAddress() == null ? "" : p.getDropOffAddress()),
+                "distanceKm", String.valueOf(p.getDistanceKm()),
+                "interIsland", String.valueOf(p.isInterIsland()),
+                "currentStatus", JsonUtil.quote(p.getCurrentStatus())
+            );
+            sb.append("{\"assignment\":" + assignmentJson(a) + ",\"parcel\":" + parcelJson + "}");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private String randomPassword() {
+        return "layag" + Integer.toHexString((int) (Math.random() * 0xFFFFFF));
     }
 
     private void handleAdminSummary(HttpExchange ex) throws IOException {
@@ -796,7 +1825,12 @@ public class ApiServer {
                 "weightKg", String.valueOf(p.getWeightKg()),
                 "fee", String.valueOf(p.getFee()),
                 "currentStatus", JsonUtil.quote(p.getCurrentStatus()),
-                "vehicle", JsonUtil.quote(p.getVehicleType())
+                "vehicle", JsonUtil.quote(p.getVehicleType()),
+                "pickupAddress", JsonUtil.quote(p.getPickUpAddress()),
+                "dropoffAddress", JsonUtil.quote(p.getDropOffAddress()),
+                "distanceKm", String.valueOf(p.getDistanceKm()),
+                "interIsland", String.valueOf(p.isInterIsland()),
+                "confirmed", String.valueOf(p.isConfirmed())
             ));
         }
         sb.append("]");
